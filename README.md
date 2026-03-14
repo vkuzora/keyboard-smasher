@@ -1,5 +1,3 @@
-# keyboard-smasher
-
 ## Как пользоваться
 
 1. Переходим в раздел [**Releases**](../../releases)
