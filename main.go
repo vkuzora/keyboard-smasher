@@ -43,7 +43,6 @@ type INPUT struct {
 }
 
 var allKeys = []byte{
-
 	0x30, //0 key
 	0x31, //1 key
 	0x32, //2 key
@@ -144,17 +143,17 @@ var allKeys = []byte{
 	0x6D, //Subtract key
 	0x6E, //Decimal key
 	0x6F, //Divide key
-
 }
 
-var combinedInputs []INPUT
+// Теперь у нас два отдельных массива
+var pressInputs []INPUT
+var releaseInputs []INPUT
 
 func init() {
+	// Собираем массивы один раз при запуске
 	for _, k := range allKeys {
-		combinedInputs = append(combinedInputs, INPUT{Type: INPUT_KEYBOARD, Ki: KEYBDINPUT{Vk: uint16(k)}})
-	}
-	for _, k := range allKeys {
-		combinedInputs = append(combinedInputs, INPUT{Type: INPUT_KEYBOARD, Ki: KEYBDINPUT{Vk: uint16(k), Flags: KEYEVENTF_KEYUP}})
+		pressInputs = append(pressInputs, INPUT{Type: INPUT_KEYBOARD, Ki: KEYBDINPUT{Vk: uint16(k)}})
+		releaseInputs = append(releaseInputs, INPUT{Type: INPUT_KEYBOARD, Ki: KEYBDINPUT{Vk: uint16(k), Flags: KEYEVENTF_KEYUP}})
 	}
 }
 
@@ -175,24 +174,28 @@ func isKeyPressed(vk int) bool {
 }
 
 func smash() {
-	sendBatch(combinedInputs)
+	// 1. Отправляем все нажатия
+	sendBatch(pressInputs)
+
+	// 2. Ждем 1 миллисекунду (чтобы движок игры успел отреагировать)
+	time.Sleep(10 * time.Millisecond)
+
+	// 3. Отправляем отпускания
+	sendBatch(releaseInputs)
 }
 
 func releaseAll() {
-	var releaseOnly []INPUT
-	for _, k := range allKeys {
-		releaseOnly = append(releaseOnly, INPUT{Type: INPUT_KEYBOARD, Ki: KEYBDINPUT{Vk: uint16(k), Flags: KEYEVENTF_KEYUP}})
-	}
-	sendBatch(releaseOnly)
+	// При экстренном выходе просто отправляем массив отпусканий
+	sendBatch(releaseInputs)
 }
 
 func main() {
-
+	// Включаем таймер высокого разрешения для всей ОС
 	procTimeBeginPeriod.Call(uintptr(1))
 	defer procTimeEndPeriod.Call(uintptr(1))
 
 	fmt.Printf("Keys loaded: %d\n", len(allKeys))
-	fmt.Printf("Batch size per tick: %d events\n\n", len(combinedInputs))
+	fmt.Printf("Events per cycle: %d down, %d up\n\n", len(pressInputs), len(releaseInputs))
 
 	for {
 		fmt.Println("F1  — start")
