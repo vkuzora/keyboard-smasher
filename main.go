@@ -139,11 +139,52 @@ var allKeys = []byte{
 	0xE6, //OEM specific
 	0xE9, //OEM specific
 	0xEA, //OEM specific
+	0xEB, //OEM specific
+	0xEC, //OEM specific
+	0xED, //OEM specific
+	0xEE, //OEM specific
+	0xEF, //OEM specific
+	0xF0, //OEM specific
+	0xF1, //OEM specific
+	0xF2, //OEM specific
+	0xF3, //OEM specific
+	0xF4, //OEM specific
+	0xF5, //OEM specific
+	0xE1, //OEM specific
+	0xBA, //It can vary by keyboard. For the US ANSI keyboard , the Semiсolon and Colon key
+	0xBB, //For any country/region, the Equals and Plus key
+	0xBC, //For any country/region, the Comma and Less Than key
+	0xBD, //For any country/region, the Dash and Underscore key
+	0xBE, //For any country/region, the Period and Greater Than key
+	0xBF, //It can vary by keyboard. For the US ANSI keyboard, the Forward Slash and Question Mark key
+	0xC0, //It can vary by keyboard. For the US ANSI keyboard, the Grave Accent and Tilde key
+	0xDB, //It can vary by keyboard. For the US ANSI keyboard, the Left Brace key
+	0xDC, //It can vary by keyboard. For the US ANSI keyboard, the Backslash and Pipe key
+	0xDD, //It can vary by keyboard. For the US ANSI keyboard, the Right Brace key
+	0xDE, //It can vary by keyboard. For the US ANSI keyboard, the Apostrophe and Double Quotation Mark key
+	0xDF, //It can vary by keyboard. For the Canadian CSA keyboard, the Right Ctrl key
+	0xE2, //It can vary by keyboard. For the European ISO keyboard, the Backslash and Pipe key
+	0xE7, //Used to pass Unicode characters as if they were keystrokes. The VK_PACKET key is the low word of a 32-bit Virtual Key value used for non-keyboard input methods. For more information, see Remark in KEYBDINPUT, SendInput, WM_KEYDOWN, and WM_KEYUP
 	0x6A, //Multiply key
 	0x6B, //Add key
 	0x6D, //Subtract key
 	0x6E, //Decimal key
 	0x6F, //Divide key
+	0x5F, //Computer Sleep key
+
+	0xC3, //Gamepad A button
+	0xC4, //Gamepad B button
+	0xC5, //Gamepad X button
+	0xC6, //Gamepad Y button
+	0xD1, //Gamepad Left Thumbstick button
+	0xD2, //Gamepad Right Thumbstick button
+	0xD4, //Gamepad Left Thumbstick down
+	0xD5, //Gamepad Left Thumbstick right
+	0xD6, //Gamepad Left Thumbstick left
+	0xD7, //Gamepad Right Thumbstick up
+	0xD8, //Gamepad Right Thumbstick down
+	0xD9, //Gamepad Right Thumbstick right
+	0xDA, //Gamepad Right Thumbstick left
 
 }
 
@@ -266,6 +307,7 @@ func main() {
 
 		for isRunning.Load() {
 			smash()
+
 		}
 
 		runtime.UnlockOSThread()
