@@ -219,10 +219,12 @@ func smash() {
 	sendBatch(pressInputs)
 
 	// 2. Ждем 1 миллисекунду (чтобы движок игры успел отреагировать)
-	// time.Sleep(10 * time.Millisecond)
+	time.Sleep(16 * time.Millisecond)
 
 	// 3. Отправляем отпускания
 	sendBatch(releaseInputs)
+
+	time.Sleep(5 * time.Millisecond)
 }
 
 func releaseAll() {
