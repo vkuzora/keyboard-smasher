@@ -209,9 +209,24 @@ func main() {
 	pressDelayEntry := makeDelayEntry("16")
 	releaseDelayEntry := makeDelayEntry("5")
 
-	timingCard := widget.NewCard("Timing", "", widget.NewForm(
-		widget.NewFormItem("Press Duration:", container.NewHBox(pressDelayEntry, widget.NewLabel("ms"))),
-		widget.NewFormItem("Release Duration:", container.NewHBox(releaseDelayEntry, widget.NewLabel("ms"))),
+	noTiming := false
+	noTimingCheck := widget.NewCheck("Single batch (no delay)", func(v bool) {
+		noTiming = v
+		if v {
+			pressDelayEntry.Disable()
+			releaseDelayEntry.Disable()
+		} else {
+			pressDelayEntry.Enable()
+			releaseDelayEntry.Enable()
+		}
+	})
+
+	timingCard := widget.NewCard("Timing", "", container.NewVBox(
+		noTimingCheck,
+		widget.NewForm(
+			widget.NewFormItem("Press Duration:", container.NewHBox(pressDelayEntry, widget.NewLabel("ms"))),
+			widget.NewFormItem("Release Duration:", container.NewHBox(releaseDelayEntry, widget.NewLabel("ms"))),
+		),
 	))
 
 	statusLabel := widget.NewLabel("Ready")
@@ -235,6 +250,8 @@ func main() {
 			statusLabel.SetText("No keys selected!")
 			return
 		}
+		combined := append(press, release...)
+		useSingleBatch := noTiming
 
 		startBtn.Disable()
 		stopBtn.Enable()
@@ -248,10 +265,15 @@ func main() {
 			defer runtime.UnlockOSThread()
 
 			for isRunning.Load() {
-				sendBatch(press)
-				time.Sleep(time.Duration(pressMs) * time.Millisecond)
-				sendBatch(release)
-				time.Sleep(time.Duration(releaseMs) * time.Millisecond)
+				if useSingleBatch {
+					sendBatch(combined)
+					runtime.Gosched()
+				} else {
+					sendBatch(press)
+					time.Sleep(time.Duration(pressMs) * time.Millisecond)
+					sendBatch(release)
+					time.Sleep(time.Duration(releaseMs) * time.Millisecond)
+				}
 			}
 			sendBatch(release)
 			close(stopCh)
