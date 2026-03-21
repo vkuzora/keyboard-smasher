@@ -77,7 +77,7 @@ var keyGroups = []KeyGroup{
 		Keys: []byte{0x6A, 0x6B, 0x6D, 0x6E, 0x6F},
 	},
 	{
-		Name: "Function keys (F1, F3–F24)",
+		Name: "Function keys (F1–F24)",
 		Keys: rangeKeys(0x70, 0x87),
 	},
 	{
@@ -171,8 +171,9 @@ func main() {
 
 	// --- Key group checkboxes ---
 	selected := make([]bool, len(keyGroups))
-	selected[0] = true // Letters
-	selected[1] = true // Digits
+	for i := range selected {
+		selected[i] = true
+	}
 
 	totalLabel := widget.NewLabel("")
 	updateTotal := func() {
@@ -188,7 +189,7 @@ func main() {
 	checks := make([]fyne.CanvasObject, len(keyGroups))
 	for i, g := range keyGroups {
 		idx := i
-		label := fmt.Sprintf("%s (%d)", g.Name, len(g.Keys))
+		label := g.Name
 		check := widget.NewCheck(label, func(v bool) {
 			selected[idx] = v
 			updateTotal()
@@ -206,7 +207,7 @@ func main() {
 	)
 
 	// --- Delay inputs ---
-	pressDelayEntry := makeDelayEntry("16")
+	pressDelayEntry := makeDelayEntry("5")
 	releaseDelayEntry := makeDelayEntry("5")
 
 	noTiming := false
@@ -223,44 +224,124 @@ func main() {
 
 	timingCard := widget.NewCard("Timing", "", container.NewVBox(
 		noTimingCheck,
-		widget.NewForm(
-			widget.NewFormItem("Press Duration:", container.NewHBox(pressDelayEntry, widget.NewLabel("ms"))),
-			widget.NewFormItem("Release Duration:", container.NewHBox(releaseDelayEntry, widget.NewLabel("ms"))),
+		container.NewHBox(
+			widget.NewLabel("Press:"),
+			container.NewGridWrap(fyne.NewSize(45, 36), pressDelayEntry),
+			widget.NewLabel("ms"),
+			widget.NewLabel("   "),
+			widget.NewLabel("Release:"),
+			container.NewGridWrap(fyne.NewSize(45, 36), releaseDelayEntry),
+			widget.NewLabel("ms"),
 		),
 	))
 
-	statusLabel := widget.NewLabel("Ready")
-	statusBar := container.NewHBox(statusLabel)
+	dotRich := widget.NewRichText(&widget.TextSegment{
+		Style: widget.RichTextStyle{ColorName: theme.ColorNameDisabled},
+		Text:  "●",
+	})
+	textRich := widget.NewRichText(&widget.TextSegment{
+		Style: widget.RichTextStyle{ColorName: theme.ColorNameForeground},
+		Text:  "Ready",
+	})
+	setStatus := func(col fyne.ThemeColorName, text string) {
+		dotRich.Segments = []widget.RichTextSegment{
+			&widget.TextSegment{Style: widget.RichTextStyle{ColorName: col}, Text: "●"},
+		}
+		dotRich.Refresh()
+		textRich.Segments = []widget.RichTextSegment{
+			&widget.TextSegment{Style: widget.RichTextStyle{ColorName: theme.ColorNameForeground}, Text: text},
+		}
+		textRich.Refresh()
+	}
+	statusBar := container.NewPadded(container.NewHBox(dotRich, textRich))
 
-	// --- Buttons ---
+	// --- Button ---
 	var isRunning atomic.Bool
 	var stopCh chan struct{}
 
-	startBtn := widget.NewButtonWithIcon("Start", theme.MediaPlayIcon(), nil)
-	startBtn.Importance = widget.SuccessImportance
-	stopBtn := widget.NewButtonWithIcon("Stop", theme.MediaStopIcon(), nil)
-	stopBtn.Disable()
+	btn := widget.NewButtonWithIcon("Start", theme.MediaPlayIcon(), nil)
+	btn.Importance = widget.SuccessImportance
 
-	startBtn.OnTapped = func() {
-		pressMs := parseDelay(pressDelayEntry, 16)
-		releaseMs := parseDelay(releaseDelayEntry, 5)
+	btn.OnTapped = func() {
+		if isRunning.Load() {
+			// Stop
+			isRunning.Store(false)
+			return
+		}
+
+		// Start
+		if pressDelayEntry.Text == "" {
+			pressDelayEntry.SetText("0")
+		}
+		if releaseDelayEntry.Text == "" {
+			releaseDelayEntry.SetText("0")
+		}
+		pressMs := parseDelay(pressDelayEntry, 0)
+		releaseMs := parseDelay(releaseDelayEntry, 0)
 
 		press, release := buildInputs(selected)
 		if len(press) == 0 {
-			statusLabel.SetText("No keys selected!")
+			setStatus(theme.ColorNameError, "No keys selected!")
 			return
 		}
 		combined := append(press, release...)
 		useSingleBatch := noTiming
 
-		startBtn.Disable()
-		stopBtn.Enable()
+		btn.SetIcon(theme.MediaStopIcon())
+		btn.SetText("Stop")
+		btn.Importance = widget.DangerImportance
+		btn.Refresh()
 		isRunning.Store(true)
 		stopCh = make(chan struct{})
-		startTime := time.Now()
 
-		// Smash goroutine
+		// Smash goroutine (с обратным отсчётом)
 		go func() {
+			for i := 3; i >= 1; i-- {
+				if !isRunning.Load() {
+					close(stopCh)
+					fyne.Do(func() {
+						setStatus(theme.ColorNameDisabled, "Cancelled")
+						btn.SetIcon(theme.MediaPlayIcon())
+						btn.SetText("Start")
+						btn.Importance = widget.SuccessImportance
+						btn.Refresh()
+					})
+					return
+				}
+				n := i
+				fyne.Do(func() { setStatus(theme.ColorNameWarning, fmt.Sprintf("Starting in %d...", n)) })
+				time.Sleep(time.Second)
+			}
+
+			startTime := time.Now()
+
+			// Timer goroutine стартует только после отсчёта
+			go func() {
+				ticker := time.NewTicker(time.Second)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-ticker.C:
+						d := time.Since(startTime).Round(time.Second)
+						h := int(d.Hours())
+						m := int(d.Minutes()) % 60
+						s := int(d.Seconds()) % 60
+						txt := fmt.Sprintf("Running  %02dh %02dm %02ds  |  %d keys", h, m, s, len(press))
+						fyne.Do(func() { setStatus(theme.ColorNameSuccess, txt) })
+					case <-stopCh:
+						elapsed := time.Since(startTime).Round(time.Second)
+						fyne.Do(func() {
+							setStatus(theme.ColorNameWarning, fmt.Sprintf("Stopped after %v", elapsed))
+							btn.SetIcon(theme.MediaPlayIcon())
+							btn.SetText("Start")
+							btn.Importance = widget.SuccessImportance
+							btn.Refresh()
+						})
+						return
+					}
+				}
+			}()
+
 			runtime.LockOSThread()
 			defer runtime.UnlockOSThread()
 
@@ -278,41 +359,10 @@ func main() {
 			sendBatch(release)
 			close(stopCh)
 		}()
-
-		// Timer goroutine
-		go func() {
-			ticker := time.NewTicker(time.Second)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ticker.C:
-					d := time.Since(startTime).Round(time.Second)
-					h := int(d.Hours())
-					m := int(d.Minutes()) % 60
-					s := int(d.Seconds()) % 60
-					txt := fmt.Sprintf("Running  %02dh %02dm %02ds  |  %d keys", h, m, s, len(press))
-					fyne.Do(func() { statusLabel.SetText(txt) })
-				case <-stopCh:
-					elapsed := time.Since(startTime).Round(time.Second)
-					fyne.Do(func() {
-						statusLabel.SetText(fmt.Sprintf("Stopped after %v", elapsed))
-						startBtn.Enable()
-						stopBtn.Disable()
-					})
-					return
-				}
-			}
-		}()
-	}
-
-	stopBtn.OnTapped = func() {
-		isRunning.Store(false)
 	}
 
 	bottom := container.NewVBox(
-		container.New(layout.NewCustomPaddedLayout(10, 10, 0, 0),
-			container.NewCenter(container.NewHBox(startBtn, stopBtn)),
-		),
+		container.New(layout.NewCustomPaddedLayout(10, 10, 0, 0), btn),
 		widget.NewSeparator(),
 		statusBar,
 	)
