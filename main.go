@@ -47,8 +47,9 @@ type INPUT struct {
 }
 
 type KeyGroup struct {
-	Name string
-	Keys []byte
+	Name    string
+	Keys    []byte
+	Default bool
 }
 
 func rangeKeys(from, to byte) []byte {
@@ -61,48 +62,86 @@ func rangeKeys(from, to byte) []byte {
 
 var keyGroups = []KeyGroup{
 	{
-		Name: "Letters (A–Z)",
-		Keys: rangeKeys(0x41, 0x5A),
+		Name:    "Mouse",
+		Keys:    rangeKeys(0x01, 0x06),
+		Default: true,
 	},
 	{
-		Name: "Digits (0–9)",
-		Keys: rangeKeys(0x30, 0x39),
+		Name:    "Standard Control",
+		Keys:    []byte{0x08, 0x0C, 0x0D, 0x13, 0x20}, //wo tab ui moment
+		Default: true,
 	},
 	{
-		Name: "Numpad (0–9)",
-		Keys: rangeKeys(0x60, 0x69),
+		Name:    "IME",
+		Keys:    append([]byte{0x15, 0xE5}, append(rangeKeys(0x17, 0x19), rangeKeys(0x1C, 0x1F)...)...),
+		Default: true,
 	},
 	{
-		Name: "Numpad operators",
-		Keys: []byte{0x6A, 0x6B, 0x6D, 0x6E, 0x6F},
+		Name:    "Navigation",
+		Keys:    rangeKeys(0x21, 0x24),
+		Default: true,
 	},
 	{
-		Name: "Function keys (F1–F24)",
-		Keys: rangeKeys(0x70, 0x87),
+		Name:    "Arrow",
+		Keys:    rangeKeys(0x25, 0x28),
+		Default: true,
+	},
+
+	{
+		Name:    "Editing",
+		Keys:    append([]byte{0x29, 0x2B}, rangeKeys(0x2D, 0x2E)...),
+		Default: true,
 	},
 	{
-		Name: "Symbols",
-		Keys: []byte{0xBA, 0xBB, 0xBC, 0xBD, 0xBE, 0xBF, 0xC0, 0xDB, 0xDC, 0xDD, 0xDE, 0xDF, 0xE2, 0xE7},
+		Name:    "Number",
+		Keys:    rangeKeys(0x30, 0x39),
+		Default: true,
 	},
 	{
-		Name: "IME",
-		Keys: []byte{0x15, 0x17, 0x18, 0x19, 0x1C, 0x1D, 0x1E, 0x1F},
+		Name:    "Alphabet",
+		Keys:    rangeKeys(0x41, 0x5A),
+		Default: true,
+	},
+
+	{
+		Name:    "Numpad",
+		Keys:    rangeKeys(0x60, 0x6F),
+		Default: true,
 	},
 	{
-		Name: "Reserved (0x88–0x8F)",
-		Keys: rangeKeys(0x88, 0x8F),
+		Name:    "Function",
+		Keys:    rangeKeys(0x70, 0x8F),
+		Default: true,
 	},
 	{
-		Name: "OEM specific",
-		Keys: []byte{0x92, 0x93, 0x94, 0x95, 0x96, 0xE1, 0xE3, 0xE4, 0xE6, 0xE9, 0xEA, 0xEB, 0xEC, 0xED, 0xEE, 0xEF, 0xF0, 0xF1, 0xF2, 0xF3, 0xF4, 0xF5},
+		Name:    "OEM",
+		Keys:    append([]byte{0xE1, 0xE3, 0xE4, 0xE6}, append(rangeKeys(0xE9, 0xF5), rangeKeys(0x92, 0x96)...)...), //0x92 work as two keys
+		Default: true,
 	},
 	{
-		Name: "Gamepad",
-		Keys: []byte{0xC3, 0xC4, 0xC5, 0xC6, 0xD1, 0xD2, 0xD4, 0xD5, 0xD6, 0xD7, 0xD8, 0xD9, 0xDA},
+		Name:    "Modifier",
+		Keys:    []byte{0x14, 0x90, 0xA0, 0xA1},
+		Default: true,
 	},
 	{
-		Name: "Sleep + misc",
-		Keys: []byte{0x5F, 0xE5},
+		Name:    "Browser",
+		Keys:    rangeKeys(0xA6, 0xA9),
+		Default: true,
+	},
+	{
+		Name:    "Symbols",
+		Keys:    append([]byte{0xE2}, append(rangeKeys(0xBA, 0xC0), rangeKeys(0xDB, 0xDF)...)...),
+		Default: true,
+	},
+	{
+		Name:    "Gamepad",
+		Keys:    append(rangeKeys(0xD4, 0xDA), append(rangeKeys(0xC3, 0xCA), rangeKeys(0xCC, 0xD2)...)...),
+		Default: false,
+	},
+	{
+		Name:    "Other",
+		Keys:    append([]byte{0xE7, 0x5F}, rangeKeys(0xF6, 0xFD)...),
+		Default: true,
 	},
 }
 
@@ -120,9 +159,9 @@ func buildInputs(selected []bool) (press, release []INPUT) {
 }
 
 func sendBatch(inputs []INPUT) {
-	if len(inputs) == 0 {
-		return
-	}
+	// if len(inputs) == 0 {
+	// 	return
+	// }
 	procSendInput.Call(
 		uintptr(len(inputs)),
 		uintptr(unsafe.Pointer(&inputs[0])),
@@ -171,8 +210,8 @@ func main() {
 
 	// --- Key group checkboxes ---
 	selected := make([]bool, len(keyGroups))
-	for i := range selected {
-		selected[i] = true
+	for i, g := range keyGroups {
+		selected[i] = g.Default
 	}
 
 	totalLabel := widget.NewLabel("")
@@ -207,11 +246,11 @@ func main() {
 	)
 
 	// --- Delay inputs ---
-	pressDelayEntry := makeDelayEntry("5")
-	releaseDelayEntry := makeDelayEntry("5")
+	pressDelayEntry := makeDelayEntry("500")
+	releaseDelayEntry := makeDelayEntry("500")
 
 	noTiming := false
-	noTimingCheck := widget.NewCheck("Single batch (no delay)", func(v bool) {
+	noTimingCheck := widget.NewCheck("No delay", func(v bool) {
 		noTiming = v
 		if v {
 			pressDelayEntry.Disable()
@@ -310,7 +349,7 @@ func main() {
 				}
 				n := i
 				fyne.Do(func() { setStatus(theme.ColorNameWarning, fmt.Sprintf("Starting in %d...", n)) })
-				time.Sleep(time.Second)
+				time.Sleep(1000 * time.Millisecond)
 			}
 
 			startTime := time.Now()
@@ -345,11 +384,13 @@ func main() {
 			runtime.LockOSThread()
 			defer runtime.UnlockOSThread()
 
-			for isRunning.Load() {
-				if useSingleBatch {
+			if useSingleBatch {
+				for isRunning.Load() {
 					sendBatch(combined)
 					runtime.Gosched()
-				} else {
+				}
+			} else {
+				for isRunning.Load() {
 					sendBatch(press)
 					time.Sleep(time.Duration(pressMs) * time.Millisecond)
 					sendBatch(release)
@@ -374,5 +415,6 @@ func main() {
 
 	w.SetContent(container.NewPadded(content))
 	w.Resize(fyne.NewSize(480, 560))
+	// w.Canvas().SetOnTypedKey(func(*fyne.KeyEvent) {})
 	w.ShowAndRun()
 }
