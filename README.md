@@ -1,6 +1,6 @@
 # Keyboard Smasher
 
-🇷🇺 [Русский](README.ru.md)
+[Русский](README.ru.md)
 
 ## Quick Start
 
