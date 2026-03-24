@@ -1,14 +1,14 @@
 package main
 
 import (
+	_ "embed"
 	"fmt"
+	"os"
 	"runtime"
 	"strconv"
 	"sync/atomic"
-	"syscall"
 	"time"
 	"unicode"
-	"unsafe"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -18,156 +18,10 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-var (
-	user32              = syscall.NewLazyDLL("user32.dll")
-	procSendInput       = user32.NewProc("SendInput")
-	winmm               = syscall.NewLazyDLL("winmm.dll")
-	procTimeBeginPeriod = winmm.NewProc("timeBeginPeriod")
-	procTimeEndPeriod   = winmm.NewProc("timeEndPeriod")
-)
+//go:embed assets/logo.png
+var logoBytes []byte
 
-const (
-	INPUT_KEYBOARD  = 1
-	KEYEVENTF_KEYUP = 0x0002
-)
-
-type KEYBDINPUT struct {
-	Vk        uint16
-	Scan      uint16
-	Flags     uint32
-	Time      uint32
-	ExtraInfo uintptr
-}
-
-type INPUT struct {
-	Type uint32
-	_    uint32
-	Ki   KEYBDINPUT
-	_    uint64
-}
-
-type KeyGroup struct {
-	Name    string
-	Keys    []byte
-	Default bool
-}
-
-func rangeKeys(from, to byte) []byte {
-	keys := make([]byte, 0, int(to-from)+1)
-	for i := from; i <= to; i++ {
-		keys = append(keys, i)
-	}
-	return keys
-}
-
-var keyGroups = []KeyGroup{
-	{
-		Name:    "Mouse",
-		Keys:    rangeKeys(0x01, 0x06),
-		Default: true,
-	},
-	{
-		Name:    "Standard Control",
-		Keys:    []byte{0x08, 0x0C, 0x0D, 0x13, 0x20}, //wo tab ui moment
-		Default: true,
-	},
-	{
-		Name:    "IME",
-		Keys:    append([]byte{0x15, 0xE5}, append(rangeKeys(0x17, 0x19), rangeKeys(0x1C, 0x1F)...)...),
-		Default: true,
-	},
-	{
-		Name:    "Navigation",
-		Keys:    rangeKeys(0x21, 0x24),
-		Default: true,
-	},
-	{
-		Name:    "Arrow",
-		Keys:    rangeKeys(0x25, 0x28),
-		Default: true,
-	},
-
-	{
-		Name:    "Editing",
-		Keys:    append([]byte{0x29, 0x2B}, rangeKeys(0x2D, 0x2E)...),
-		Default: true,
-	},
-	{
-		Name:    "Number",
-		Keys:    rangeKeys(0x30, 0x39),
-		Default: true,
-	},
-	{
-		Name:    "Alphabet",
-		Keys:    rangeKeys(0x41, 0x5A),
-		Default: true,
-	},
-
-	{
-		Name:    "Numpad",
-		Keys:    rangeKeys(0x60, 0x6F),
-		Default: true,
-	},
-	{
-		Name:    "Function",
-		Keys:    rangeKeys(0x70, 0x8F),
-		Default: true,
-	},
-	{
-		Name:    "OEM",
-		Keys:    append([]byte{0xE1, 0xE3, 0xE4, 0xE6}, append(rangeKeys(0xE9, 0xF5), rangeKeys(0x92, 0x96)...)...), //0x92 work as two keys
-		Default: true,
-	},
-	{
-		Name:    "Modifier",
-		Keys:    []byte{0x14, 0x90, 0xA0, 0xA1},
-		Default: true,
-	},
-	{
-		Name:    "Browser",
-		Keys:    rangeKeys(0xA6, 0xA9),
-		Default: true,
-	},
-	{
-		Name:    "Symbols",
-		Keys:    append([]byte{0xE2}, append(rangeKeys(0xBA, 0xC0), rangeKeys(0xDB, 0xDF)...)...),
-		Default: true,
-	},
-	{
-		Name:    "Gamepad",
-		Keys:    append(rangeKeys(0xD4, 0xDA), append(rangeKeys(0xC3, 0xCA), rangeKeys(0xCC, 0xD2)...)...),
-		Default: false,
-	},
-	{
-		Name:    "Other",
-		Keys:    append([]byte{0xE7, 0x5F}, rangeKeys(0xF6, 0xFD)...),
-		Default: true,
-	},
-}
-
-func buildInputs(selected []bool) (press, release []INPUT) {
-	for i, g := range keyGroups {
-		if !selected[i] {
-			continue
-		}
-		for _, k := range g.Keys {
-			press = append(press, INPUT{Type: INPUT_KEYBOARD, Ki: KEYBDINPUT{Vk: uint16(k)}})
-			release = append(release, INPUT{Type: INPUT_KEYBOARD, Ki: KEYBDINPUT{Vk: uint16(k), Flags: KEYEVENTF_KEYUP}})
-		}
-	}
-	return
-}
-
-func sendBatch(inputs []INPUT) {
-	// if len(inputs) == 0 {
-	// 	return
-	// }
-	procSendInput.Call(
-		uintptr(len(inputs)),
-		uintptr(unsafe.Pointer(&inputs[0])),
-		unsafe.Sizeof(inputs[0]),
-	)
-}
+var logoResource = fyne.NewStaticResource("logo.png", logoBytes)
 
 func makeDelayEntry(defaultVal string) *widget.Entry {
 	e := widget.NewEntry()
@@ -204,15 +58,26 @@ func main() {
 	procTimeBeginPeriod.Call(uintptr(1))
 	defer procTimeEndPeriod.Call(uintptr(1))
 
+	os.Setenv("FYNE_SCALE", "0.8")
 	a := app.New()
+	a.SetIcon(logoResource)
 	w := a.NewWindow("Keyboard Smasher")
 	w.SetFixedSize(true)
+	w.SetIcon(logoResource)
 
 	// --- Key group checkboxes ---
 	selected := make([]bool, len(keyGroups))
 	for i, g := range keyGroups {
 		selected[i] = g.Default
 	}
+
+	if cfg := loadConfig(); cfg != nil {
+		if len(cfg.Selected) == len(keyGroups) {
+			copy(selected, cfg.Selected)
+		}
+	}
+
+	var save func()
 
 	totalLabel := widget.NewLabel("")
 	updateTotal := func() {
@@ -228,10 +93,10 @@ func main() {
 	checks := make([]fyne.CanvasObject, len(keyGroups))
 	for i, g := range keyGroups {
 		idx := i
-		label := g.Name
-		check := widget.NewCheck(label, func(v bool) {
+		check := widget.NewCheck(g.Name, func(v bool) {
 			selected[idx] = v
 			updateTotal()
+			save()
 		})
 		check.Checked = selected[i]
 		checks[i] = check
@@ -250,6 +115,29 @@ func main() {
 	releaseDelayEntry := makeDelayEntry("500")
 
 	noTiming := false
+
+	save = func() {
+		saveConfig(Config{
+			Selected:  selected,
+			PressMs:   pressDelayEntry.Text,
+			ReleaseMs: releaseDelayEntry.Text,
+			NoTiming:  noTiming,
+		})
+	}
+
+	if cfg := loadConfig(); cfg != nil {
+		if cfg.PressMs != "" {
+			pressDelayEntry.SetText(cfg.PressMs)
+		}
+		if cfg.ReleaseMs != "" {
+			releaseDelayEntry.SetText(cfg.ReleaseMs)
+		}
+		noTiming = cfg.NoTiming
+	}
+
+	pressDelayEntry.OnChanged = func(s string) { save() }
+	releaseDelayEntry.OnChanged = func(s string) { save() }
+
 	noTimingCheck := widget.NewCheck("No delay", func(v bool) {
 		noTiming = v
 		if v {
@@ -259,7 +147,13 @@ func main() {
 			pressDelayEntry.Enable()
 			releaseDelayEntry.Enable()
 		}
+		save()
 	})
+	noTimingCheck.Checked = noTiming
+	if noTiming {
+		pressDelayEntry.Disable()
+		releaseDelayEntry.Disable()
+	}
 
 	timingCard := widget.NewCard("Timing", "", container.NewVBox(
 		noTimingCheck,
@@ -274,6 +168,7 @@ func main() {
 		),
 	))
 
+	// --- Status ---
 	dotRich := widget.NewRichText(&widget.TextSegment{
 		Style: widget.RichTextStyle{ColorName: theme.ColorNameDisabled},
 		Text:  "●",
@@ -298,17 +193,15 @@ func main() {
 	var isRunning atomic.Bool
 	var stopCh chan struct{}
 
-	btn := widget.NewButtonWithIcon("Start", theme.MediaPlayIcon(), nil)
+	btn := widget.NewButtonWithIcon("", theme.MediaPlayIcon(), nil)
 	btn.Importance = widget.SuccessImportance
 
 	btn.OnTapped = func() {
 		if isRunning.Load() {
-			// Stop
 			isRunning.Store(false)
 			return
 		}
 
-		// Start
 		if pressDelayEntry.Text == "" {
 			pressDelayEntry.SetText("0")
 		}
@@ -327,13 +220,35 @@ func main() {
 		useSingleBatch := noTiming
 
 		btn.SetIcon(theme.MediaStopIcon())
-		btn.SetText("Stop")
 		btn.Importance = widget.DangerImportance
 		btn.Refresh()
 		isRunning.Store(true)
 		stopCh = make(chan struct{})
 
-		// Smash goroutine (с обратным отсчётом)
+		// F1 watcher
+		go func() {
+			for isRunning.Load() {
+				if isKeyPressed(VK_F1) {
+					isRunning.Store(false)
+					break
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+		}()
+
+		// Focus watcher
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			for isRunning.Load() {
+				if !isForeground() {
+					isRunning.Store(false)
+					break
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+		}()
+
+		// Smash goroutine
 		go func() {
 			for i := 3; i >= 1; i-- {
 				if !isRunning.Load() {
@@ -341,7 +256,6 @@ func main() {
 					fyne.Do(func() {
 						setStatus(theme.ColorNameDisabled, "Cancelled")
 						btn.SetIcon(theme.MediaPlayIcon())
-						btn.SetText("Start")
 						btn.Importance = widget.SuccessImportance
 						btn.Refresh()
 					})
@@ -349,12 +263,11 @@ func main() {
 				}
 				n := i
 				fyne.Do(func() { setStatus(theme.ColorNameWarning, fmt.Sprintf("Starting in %d...", n)) })
-				time.Sleep(1000 * time.Millisecond)
+				time.Sleep(time.Second)
 			}
 
 			startTime := time.Now()
 
-			// Timer goroutine стартует только после отсчёта
 			go func() {
 				ticker := time.NewTicker(time.Second)
 				defer ticker.Stop()
@@ -372,7 +285,6 @@ func main() {
 						fyne.Do(func() {
 							setStatus(theme.ColorNameWarning, fmt.Sprintf("Stopped after %v", elapsed))
 							btn.SetIcon(theme.MediaPlayIcon())
-							btn.SetText("Start")
 							btn.Importance = widget.SuccessImportance
 							btn.Refresh()
 						})
@@ -402,10 +314,44 @@ func main() {
 		}()
 	}
 
+	// --- Help ---
+	var helpWin fyne.Window
+	helpBtn := widget.NewButton("?", func() {
+		if helpWin != nil {
+			helpWin.RequestFocus()
+			return
+		}
+
+		hw := a.NewWindow("Help")
+		hw.SetFixedSize(true)
+		hw.Resize(fyne.NewSize(450, 500))
+		hw.SetOnClosed(func() { helpWin = nil })
+
+		richText := widget.NewRichTextFromMarkdown(helpTexts["RU"])
+		richText.Wrapping = fyne.TextWrapWord
+
+		langGroup := widget.NewRadioGroup([]string{"RU", "EN"}, func(lang string) {
+			richText.ParseMarkdown(helpTexts[lang])
+		})
+		langGroup.SetSelected("EN")
+		langGroup.Horizontal = true
+
+		hw.SetContent(container.NewPadded(container.NewBorder(
+			container.NewHBox(layout.NewSpacer(), langGroup),
+			nil, nil, nil,
+			container.NewVScroll(richText),
+		)))
+		hw.SetIcon(theme.QuestionIcon())
+		hw.CenterOnScreen()
+		hw.Show()
+		helpWin = hw
+	})
+	helpBtn.Importance = widget.LowImportance
+
 	bottom := container.NewVBox(
 		container.New(layout.NewCustomPaddedLayout(10, 10, 0, 0), btn),
 		widget.NewSeparator(),
-		statusBar,
+		container.NewBorder(nil, nil, nil, helpBtn, statusBar),
 	)
 
 	content := container.NewBorder(
@@ -415,6 +361,6 @@ func main() {
 
 	w.SetContent(container.NewPadded(content))
 	w.Resize(fyne.NewSize(480, 560))
-	// w.Canvas().SetOnTypedKey(func(*fyne.KeyEvent) {})
+	w.CenterOnScreen()
 	w.ShowAndRun()
 }
